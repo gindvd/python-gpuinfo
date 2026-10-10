@@ -158,11 +158,11 @@ def gpu_manufacturers() -> list[str]:
     Returns list of manufacturer names of all connected GPUs
 
     Possible returns options:
-        NVIDIA - for NVIDIA GPUS
-        AMD - for AMD for dedicated and integrated GPUs
-        Intel - for Intel for dedicated and integrated GPUs
-        Apple - for Macbook M5 GPUs
-        Adapter - return value for operating systems hosted on virtual machines / containers, 
+        nvidia - for NVIDIA GPUS
+        amd - for AMD for dedicated and integrated GPUs
+        intel - for Intel for dedicated and integrated GPUs
+        apple - for Macbook M5 GPUs
+        adapter - return value for operating systems hosted on virtual machines / containers, 
                   or due to missing drivers
     """
     gpus = gpu_fullnames()    
@@ -173,15 +173,15 @@ def gpu_manufacturers() -> list[str]:
         split_name = gpu.split()
 
         # Linux devices may use Advanced Micro Devices, Inc instead on AMD
-        if split_name[0] == "Advanced":
-            manufacturers.append("AMD")
+        if split_name[0].lower() == "advanced":
+            manufacturers.append("amd")
             continue
 
         # possible options for OS run on virtual machines, and containers
-        elif split_name[0] in ["Microsoft", "VMware", "VirtualBox"]:
-            manufacturers.append("Adapter")
+        elif split_name[0].lower in ["microsoft", "vmware", "virtualbox"]:
+            manufacturers.append("adapter")
             continue
 
-        manufacturers.append(split_namename[0])
+        manufacturers.append(split_namename[0].lower())
 
     return list(dict.fromkeys(manufacturers))
