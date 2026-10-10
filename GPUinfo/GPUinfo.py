@@ -1,63 +1,187 @@
-"""
-GPUinfo
-Callable functions to get GPU names, manufacturers, and compatible codecs
-David Gingerich
-Version 1.0.0
-"""
+import platform
+import subprocess
+import re
+import sys
 
-from GPUinfo.handler import *
+from collections.abc import Sequence
+from typing import Any
 
-def manufacturers() -> list[str]:
-  """
-  Possible returns options:
-  NVIDIA - for NVIDIA GPUS
-  AMD - for AMD for dedicated and integrated GPUs
-  Intel - for Intel for dedicated and integrated GPUs
-  Apple - for Macbook M5 GPUs
-  Adapter - possible returns on Virtual Machines and Container hosted OS
-  """
 
-  string_of_connected_gpus: str = get_gpu_names()
-  
-  list_of_connected_gpus: list[str] = string_of_connected_gpus.splitlines()
+class CompatibiltyError(Exception):
+    """Error raised when devices operating system is not compatible with the script"""
 
-  device_manufacturers = []
-  for connected_gpu in list_of_connected_gpus:
-    temp = []
-    connected_gpu = remove_symbols(connected_gpu)
-    temp = connected_gpu.split()
+    def __init__(self, message: str, device_os: str) -> None:
+        super().__init__()
+        self._device_os: str = device_os
+        self._message: str = message
 
-    if temp == []:
-      continue
+    def __str__(self) -> str:
+        """Formatted string with information to get logged when error is raised"""
+        return f"{self._message}\n(Incompatible Operating System: {self._device_os})"
+
+
+# Type aliases for system cmmands dictinary
+type Pipeline = tuple[str, ...]
+type SystemCommands = dict[str, Pipeline]
+
+GPU_COMMANDS: SystemCommands = {
+    "Linux": ("lspci",),
+    "Darwin": ("system_profiler", "SPDisplaysDataType"),
+    "win11": (
+        "powershell",
+        "-Command",
+        "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name",
+    ),
+    "win-legacy": ("wmic", "path", "Win32_VideoController", "get", "name"),
+}
+
+
+def _get_device_output() -> str:
+    """Calls system to get string of connected GPUs"""
+    device_os: str = platform.system()
+
+    if device_os not in ["Linux", "Darwin", "Windows"]:
+        raise CompatibiltyError(
+            "The GPU info cannot be obtained on this device", device_os
+        )
+
+    # use powershell on Windows 11, batch on older Windows versions
+    if device_os == "Windows":
+        version = platform.release()
+        if version != "11":
+            device_os = "win-legacy"
+
+        else:
+            device_os = "win11"
+
+    cmd: Pipeline = GPU_COMMANDS[device_os]
+
+    return _run_cmd(cmd)
+
+
+def _run_cmd(cmd: Sequence[str]) -> str:
+    """Runs command to get output containing all connected device names"""
+    flags: dict[str, Any] = {}
+
+    # flags to hide console window
+    if sys.platform.startswith("win"):
+        flags["creationflags"] = (
+            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        )
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        flags["startupinfo"] = si
+
+    else:
+        flags["start_new_session"] = True
     
-    name = temp[0]
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, check=True, shell=False, text=True, **flags
+        )
 
-    # Windows command batch will return name 
-    if name in ("", "Name", "name"):
-      continue
+    except FileNotFoundError as e:
+        raise FileNotFoundError("Command not found in PATH") from e
 
-    # Linux devices may use Advanced Micro Devices, Inc instead on AMD
-    elif name == "Advanced":
-      name = "AMD"
+    except PermissionError as e:
+        raise PermissionError("Permission denied when running system command") from e
 
-    # possible options for OS run on virtual machines, and containers
-    elif name in ["Microsoft", "VMware", "VirtualBox"]:
-      name = "Adapter"
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError("Subprocess failed") from e
 
-    device_manufacturers.append(name)
+    except OSError as e:
+        raise OSError("OS error while running subprocess") from e
 
-  return device_manufacturers
+    else:
+        return proc.stdout
 
-def fullnames() -> list[str]:
-  string_of_connected_gpus: str = get_gpu_names()
-  
-  list_of_connected_gpus: list[str] = string_of_connected_gpus.splitlines()
 
-  device_fullnames = []
-  for connected_gpu in list_of_connected_gpus:
-    connected_gpu = remove_symbols(connected_gpu)
+def _parse_linux_output(output: str) -> list[str]:
+    gpus = []
 
-    if connected_gpu not in ("", "Name", "name"):
-      device_fullnames.append(connected_gpu)
+    for line in output.splitlines():
+        if any(x in line.lower() for x in ("vga", "3d", "video")):
+            gpus.append(line.split(": ", 1)[1].split(" (rev")[0])
 
-  return device_fullnames
+    return gpus
+
+
+def _parse_mac_output(output: str) -> list[str]:
+    gpus = []
+
+    for line in output.splitlines():
+        if "Chipset Model:" in line:
+            gpus.append(line.split(":", 1)[1].strip())
+
+    return gpus
+
+
+def _parse_win_output(output: str) -> list[str]:
+    gpus = []
+
+    for line in output.splitlines():
+        if line.lower not in ["name", "names"] or line != "":
+            gpus.append(line)
+
+    return gpus
+
+
+def _remove_symbols(gpu_names: list[str]) -> list[str]:
+    """ Remove special characters and symbols added to GPU names """
+    cleaned_gpus = []
+
+    for string in name:
+        stripped = re.sub(r"[\($@*&?-].*[\)$@*&?-]", "", string).strip()
+
+        if stripped != "":
+            cleaned_gpus.append(stripped)
+
+    return cleaned_gpus
+
+
+def gpu_fullnames() -> list[str]:
+    """ Returns fullnames of connected GPU devices """
+    output: str = _get_device_output()
+
+    if sys.platform.startswith("win"):
+        gpus = _parse_win_output(output)
+    elif sys.platform.startswith("linux"):
+        gpus = _parse_linux_output(output)
+    elif sys.platform.startswith("darwin"):
+        gpus = _parse_mac_output(output)
+    
+    return _remove_symbols(gpus)
+
+
+def gpu_manufacturers() -> list[str]:
+    """
+    Returns list of manufacturer names of all connected GPUs
+
+    Possible returns options:
+        NVIDIA - for NVIDIA GPUS
+        AMD - for AMD for dedicated and integrated GPUs
+        Intel - for Intel for dedicated and integrated GPUs
+        Apple - for Macbook M5 GPUs
+        Adapter - return value for operating systems hosted on virtual machines / containers, 
+                  or due to missing drivers
+    """
+    gpus = gpu_fullnames()    
+
+    manufacturers: list[str] = []
+
+    for gpu in gpus.split():
+        split_name = gpu.split()
+
+        # Linux devices may use Advanced Micro Devices, Inc instead on AMD
+        if split_name[0] == "Advanced":
+            manufacturers.append("AMD")
+            continue
+
+        # possible options for OS run on virtual machines, and containers
+        elif split_name[0] in ["Microsoft", "VMware", "VirtualBox"]:
+            manufacturers.append("Adapter")
+            continue
+
+        manufacturers.append(split_namename[0])
+
+    return list(dict.fromkeys(manufacturers))
