@@ -130,7 +130,7 @@ def _remove_symbols(gpu_names: list[str]) -> list[str]:
     """ Remove special characters and symbols added to GPU names """
     cleaned_gpus = []
 
-    for string in name:
+    for string in gpu_names:
         stripped = re.sub(r"[\($@*&?-].*[\)$@*&?-]", "", string).strip()
 
         if stripped != "":
@@ -169,7 +169,7 @@ def gpu_manufacturers() -> list[str]:
 
     manufacturers: list[str] = []
 
-    for gpu in gpus.split():
+    for gpu in gpus:
         split_name = gpu.split()
 
         # Linux devices may use Advanced Micro Devices, Inc instead on AMD
@@ -182,6 +182,6 @@ def gpu_manufacturers() -> list[str]:
             manufacturers.append("adapter")
             continue
 
-        manufacturers.append(split_namename[0].lower())
+        manufacturers.append(split_name[0].lower())
 
     return list(dict.fromkeys(manufacturers))
