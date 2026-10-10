@@ -20,20 +20,20 @@ for idx, name in enumerate(connected_gpu_names):
 ```
 
 ## Methods
-- **fullnames()**
+- **gpu_fullnames()**
     
     Returns a list of all connected GPU names:
     ```python
-    connected_gpu_names = fullnames()
+    connected_gpu_names = gpu_fullnames()
     ```
 
     Output example: ['Intel Corporation UHD Graphics 620', 'NVIDIA Geforce 4070 RTX']
 
-- **manufacturers()**
+- **gpu_manufacturers()**
     
     Returns list of manufacturers of all connected GPUs
     ```python
-    connected_gpu_manufacturers = manufacturers()
+    connected_gpu_manufacturers = gpu_manufacturers()
     ```
 
     Possible returns options:
